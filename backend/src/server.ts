@@ -19,6 +19,8 @@ async function tryConnect(retries: number, delay: number): Promise<boolean> {
 }
 
 async function start(): Promise<void> {
+  // wait a moment for Postgres to settle after healthcheck
+  await new Promise((r) => setTimeout(r, 2000));
   const connected = await tryConnect(3, 3000);
 
   if (connected) {
