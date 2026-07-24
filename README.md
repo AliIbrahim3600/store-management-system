@@ -87,53 +87,88 @@ store-management-system/
 
 ### Prerequisites
 
-- Node.js >= 20
-- PostgreSQL >= 15
-- npm
+- **Node.js** >= 20
+- **Docker** + **Docker Compose** (for PostgreSQL)
+- **npm**
 
 ### Installation
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/AliIbrahim3600/store-management-system.git
 cd store-management-system
 
-# Install backend dependencies
+# 2. Start PostgreSQL via Docker
+docker compose up -d
+
+# 3. Install backend dependencies
 cd backend
 npm install
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your database credentials and secrets
+# 4. Configure environment — .env files are pre-configured for local dev
+#    Edit backend/.env to change secrets before going to production
 
-# Run database migrations
+# 5. Generate Prisma Client & apply migrations
+npx prisma generate
 npx prisma migrate dev
 
-# Install frontend dependencies
+# 6. (Optional) Seed the database with sample data
+npx prisma db seed
+
+# 7. Install frontend dependencies
 cd ../frontend
 npm install
 
-# Set up frontend environment variables
+# 8. Configure frontend environment
 cp .env.example .env
 ```
 
 ### Development
 
+Start both servers in separate terminals:
+
 ```bash
-# Start backend (from backend/)
+# Terminal 1 — Backend (from backend/)
 npm run dev
 
-# Start frontend (from frontend/)
+# Terminal 2 — Frontend (from frontend/)
 npm run dev
 ```
 
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:3000`
-- API Docs: `http://localhost:3000/api-docs`
+| Service     | URL                                |
+|-------------|------------------------------------|
+| Frontend    | `http://localhost:5173`            |
+| Backend API | `http://localhost:3000`            |
+| API Docs    | `http://localhost:3000/api-docs`   |
+| PostgreSQL  | `localhost:5432`                   |
+| Prisma Studio | `npx prisma studio` (from `backend/`) |
 
-### Testing
+### Default Accounts (after seeding)
+
+All seeded accounts use password: `Admin@123`
+
+| Email                | Role        |
+|----------------------|-------------|
+| `dev@freshmart.com`  | Developer   |
+| `owner@freshmart.com`| Owner       |
+| `admin@freshmart.com`| Admin       |
+| `cashier1@freshmart.com` | Employee |
+
+### Useful Commands
 
 ```bash
+# Stop PostgreSQL (keeps data)
+docker compose stop
+
+# Stop PostgreSQL and delete data volume
+docker compose down -v
+
+# Open Prisma Studio (GUI database browser)
+cd backend && npx prisma studio
+
+# Reset database (drops all data, re-runs migrations, re-seeds)
+cd backend && npx prisma migrate reset
+
 # Backend tests
 cd backend
 npm test

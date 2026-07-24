@@ -1,0 +1,553 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum PaymentMethod {
+  CASH
+  CARD
+  WALLET
+}
+
+enum EmployeePosition {
+  CASHIER
+  STORE_MANAGER
+  STOCK_KEEPER
+  WAREHOUSE_WORKER
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  STOCK_ALERT
+  SALE_ALERT
+  OVERTIME
+  SYSTEM
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+}
+
+enum InventoryTxType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  RETURN
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLATFORM & BRAND LAYER
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// A brand is the top-level tenant. Each brand owns stores, products, suppliers,
+/// customers, and optionally authenticates its own users.
+model Brand {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  logo      String?  @db.Text
+  email     String?  @db.VarChar(255)
+  phone     String?  @db.VarChar(50)
+  address   String?  @db.Text
+  taxNumber String?  @db.VarChar(50)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stores     Store[]
+  products   Product[]
+  categories Category[]
+  suppliers  Supplier[]
+  customers  Customer[]
+  users      User[]
+
+  @@index([name])
+  @@map("brands")
+}
+
+/// A store belongs to exactly one brand. The code is unique within the brand.
+model Store {
+  id          String   @id @default(uuid()) @db.Uuid
+  brandId     String   @db.Uuid
+  name        String   @db.VarChar(255)
+  code        String   @db.VarChar(100)
+  address     String?  @db.Text
+  city        String?  @db.VarChar(100)
+  phone       String?  @db.VarChar(50)
+  openingTime String?  @db.VarChar(5)   // HH:MM format
+  closingTime String?  @db.VarChar(5)   // HH:MM format
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brand     Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  employees Employee[]
+  inventory Inventory[]
+  sales     Sale[]
+  purchases Purchase[]
+  cashRegisters CashRegister[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@unique([brandId, code])
+  @@map("stores")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USER & ROLE / AUTH LAYER
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// A user authenticates into the system. brandId is nullable for developer/
+/// super-admin accounts that span brands.
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  brandId      String?  @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @db.VarChar(255)
+  firstName    String   @db.VarChar(100)
+  lastName     String   @db.VarChar(100)
+  phone        String?  @db.VarChar(50)
+  roleId       String   @db.Uuid
+  isActive     Boolean  @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  brand     Brand?  @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  role      Role    @relation(fields: [roleId], references: [id])
+  employee  Employee?
+  notifications Notification[]
+  auditLogs AuditLog[]
+  inventoryTransactions InventoryTransaction[]
+  approvedRefunds Refund[] @relation("ApprovedRefunds")
+
+  @@index([brandId])
+  @@index([roleId])
+  @@map("users")
+}
+
+/// A role groups users by permission level. Built-in names: Developer, Owner,
+/// Admin, Employee.
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+/// A permission is a single atomic action (e.g. "product.create", "sale.refund").
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+/// Junction table linking Role <-> Permission (many-to-many).
+model RolePermission {
+  roleId       String @db.Uuid
+  permissionId String @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EMPLOYEE & OPERATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// An employee is a user who works at a specific store. The userId is unique,
+/// meaning a User can be linked to at most one Employee record.
+model Employee {
+  id           String           @id @default(uuid()) @db.Uuid
+  storeId      String           @db.Uuid
+  userId       String           @unique @db.Uuid
+  employeeCode String           @unique @db.VarChar(50)
+  jobTitle     EmployeePosition
+  salary       Decimal?         @db.Decimal(10, 2)
+  hireDate     DateTime         @db.Date
+  isActive     Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  store  Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shifts Shift[]
+  sales  Sale[]
+  purchases Purchase[]
+  overtimeRequests OvertimeRequest[]
+  refunds Refund[]
+
+  @@index([storeId])
+  @@index([jobTitle])
+  @@map("employees")
+}
+
+model CashRegister {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @db.Uuid
+  name      String   @db.VarChar(100)
+  number    String?  @db.VarChar(50)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store  Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  shifts Shift[]
+
+  @@map("cash_registers")
+}
+
+model Shift {
+  id             String   @id @default(uuid()) @db.Uuid
+  employeeId     String   @db.Uuid
+  cashRegisterId String   @db.Uuid
+  startTime      DateTime
+  endTime        DateTime?
+  openingCash    Decimal  @db.Decimal(10, 2)
+  closingCash    Decimal? @db.Decimal(10, 2)
+
+  employee     Employee     @relation(fields: [employeeId], references: [id])
+  cashRegister CashRegister @relation(fields: [cashRegisterId], references: [id])
+
+  @@index([employeeId])
+  @@index([startTime])
+  @@map("shifts")
+}
+
+model OvertimeRequest {
+  id         String         @id @default(uuid()) @db.Uuid
+  employeeId String         @db.Uuid
+  hours      Decimal        @db.Decimal(5, 1)
+  reason     String         @db.Text
+  status     OvertimeStatus
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([status])
+  @@map("overtime_requests")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PRODUCT & CATEGORY
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// A category belongs to a brand. Name is unique within the brand.
+model Category {
+  id        String   @id @default(uuid()) @db.Uuid
+  brandId   String   @db.Uuid
+  name      String   @db.VarChar(255)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([brandId, name])
+  @@map("categories")
+}
+
+/// A product belongs to a brand and a category. Barcode is globally unique;
+/// SKU is unique within the brand.
+model Product {
+  id           String   @id @default(uuid()) @db.Uuid
+  brandId      String   @db.Uuid
+  categoryId   String   @db.Uuid
+  barcode      String   @unique @db.VarChar(100)
+  sku          String   @db.VarChar(100)
+  name         String   @db.VarChar(255)
+  description  String?  @db.Text
+  costPrice    Decimal  @db.Decimal(10, 2)
+  sellingPrice Decimal  @db.Decimal(10, 2)
+  taxRate      Decimal  @default(0) @db.Decimal(5, 2)
+  image        String?  @db.Text
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  category  Category  @relation(fields: [categoryId], references: [id])
+  inventory Inventory[]
+  saleItems SaleItem[]
+  purchaseItems PurchaseItem[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@unique([brandId, sku])
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([name])
+  @@map("products")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SUPPLIER & PURCHASING
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// A supplier works with a brand to provide products.
+model Supplier {
+  id        String   @id @default(uuid()) @db.Uuid
+  brandId   String   @db.Uuid
+  name      String   @db.VarChar(255)
+  email     String?  @db.VarChar(255)
+  phone     String?  @db.VarChar(50)
+  address   String?  @db.Text
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand     Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  purchases Purchase[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+model Purchase {
+  id            String   @id @default(uuid()) @db.Uuid
+  storeId       String   @db.Uuid
+  supplierId    String   @db.Uuid
+  employeeId    String   @db.Uuid
+  purchaseDate  DateTime
+  invoiceNumber String?  @unique @db.VarChar(100)
+  totalAmount   Decimal  @db.Decimal(10, 2)
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store    Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  purchaseItems PurchaseItem[]
+
+  @@index([storeId])
+  @@index([supplierId])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  purchaseId String  @db.Uuid
+  productId  String  @db.Uuid
+  quantity   Int
+  costPrice  Decimal @db.Decimal(10, 2)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@id([purchaseId, productId])
+  @@index([productId])
+  @@map("purchase_items")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INVENTORY
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Current stock level per (store, product). Composite PK.
+model Inventory {
+  storeId     String @db.Uuid
+  productId   String @db.Uuid
+  quantity    Int
+  minQuantity Int?
+  maxQuantity Int?
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([storeId, productId])
+  @@index([productId])
+  @@map("inventory")
+}
+
+/// Every stock movement is logged here. referenceType/referenceId allow
+/// linking to Purchase, Sale, Transfer, etc. (polymorphic reference).
+model InventoryTransaction {
+  id            String          @id @default(uuid()) @db.Uuid
+  storeId       String          @db.Uuid
+  productId     String          @db.Uuid
+  userId        String          @db.Uuid
+  type          InventoryTxType
+  quantity      Int
+  referenceType String?         @db.VarChar(50)
+  referenceId   String?         @db.Uuid
+  notes         String?         @db.Text
+  createdAt     DateTime        @default(now())
+
+  store   Store   @relation(fields: [storeId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([storeId])
+  @@index([productId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("inventory_transactions")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CUSTOMER & SALES
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Customer {
+  id            String   @id @default(uuid()) @db.Uuid
+  brandId       String   @db.Uuid
+  name          String   @db.VarChar(255)
+  phone         String?  @db.VarChar(50)
+  email         String?  @db.VarChar(255)
+  loyaltyPoints Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  sales Sale[]
+
+  @@index([name])
+  @@map("customers")
+}
+
+model Sale {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @db.Uuid
+  employeeId  String   @db.Uuid
+  customerId  String?  @db.Uuid
+  saleDate    DateTime
+  totalAmount Decimal  @db.Decimal(10, 2)
+  discount    Decimal  @default(0) @db.Decimal(10, 2)
+  tax         Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+
+  store    Store    @relation(fields: [storeId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  saleItems SaleItem[]
+  payments  Payment[]
+  refunds   Refund[]
+
+  @@index([storeId])
+  @@index([employeeId])
+  @@index([customerId])
+  @@index([saleDate])
+  @@index([storeId, saleDate])
+  @@map("sales")
+}
+
+model SaleItem {
+  saleId    String  @db.Uuid
+  productId String  @db.Uuid
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+  discount  Decimal @default(0) @db.Decimal(10, 2)
+  tax       Decimal @db.Decimal(10, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([saleId, productId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+model Payment {
+  id     String        @id @default(uuid()) @db.Uuid
+  saleId String        @db.Uuid
+  amount Decimal       @db.Decimal(10, 2)
+  method PaymentMethod
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("payments")
+}
+
+model Refund {
+  id         String       @id @default(uuid()) @db.Uuid
+  saleId     String       @db.Uuid
+  employeeId String       @db.Uuid
+  approvedBy String?      @db.Uuid
+  refundDate DateTime
+  reason     String       @db.Text
+  amount     Decimal      @db.Decimal(10, 2)
+  status     RefundStatus
+
+  sale     Sale     @relation(fields: [saleId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+  approver User?    @relation("ApprovedRefunds", fields: [approvedBy], references: [id])
+
+  @@index([saleId])
+  @@index([status])
+  @@map("refunds")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS & AUDIT
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+/// Immutable audit log recording every significant action.
+model AuditLog {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String?     @db.Uuid
+  action    AuditAction
+  entity    String      @db.VarChar(100)
+  entityId  String      @db.Uuid
+  oldValue  String?     @db.Text
+  newValue  String?     @db.Text
+  ipAddress String?     @db.VarChar(45)
+  createdAt DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

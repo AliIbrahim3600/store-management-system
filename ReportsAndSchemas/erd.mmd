@@ -1,0 +1,372 @@
+erDiagram
+    %% ========================================================================
+    %% Supermarket Management System — Entity Relationship Diagram
+    %% ========================================================================
+    %% Enum Reference:
+    %%   PaymentMethod:      CASH | CARD | WALLET
+    %%   EmployeePosition:   CASHIER | STORE_MANAGER | STOCK_KEEPER | WAREHOUSE_WORKER
+    %%   OvertimeStatus:     PENDING | APPROVED | REJECTED
+    %%   NotificationType:   STOCK_ALERT | SALE_ALERT | OVERTIME | SYSTEM
+    %%   RefundStatus:       PENDING | APPROVED | REJECTED
+    %%   AuditAction:        CREATE | UPDATE | DELETE | LOGIN | LOGOUT
+    %%   InventoryTxType:    STOCK_IN | STOCK_OUT | ADJUSTMENT | TRANSFER_IN | TRANSFER_OUT | RETURN
+    %% ========================================================================
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  PLATFORM & BRAND LAYER
+    %% ────────────────────────────────────────────────────────────────────────
+
+    BRAND ||--o{ STORE : "has"
+    BRAND ||--o{ PRODUCT : "owns"
+    BRAND ||--o{ CATEGORY : "categorizes"
+    BRAND ||--o{ SUPPLIER : "works_with"
+    BRAND ||--o{ CUSTOMER : "serves"
+    BRAND |o--o{ USER : "authenticates"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  STORE LAYER
+    %% ────────────────────────────────────────────────────────────────────────
+
+    STORE ||--o{ EMPLOYEE : "employs"
+    STORE ||--o{ INVENTORY : "stocks"
+    STORE ||--o{ SALE : "processes"
+    STORE ||--o{ PURCHASE : "receives"
+    STORE ||--o{ CASH_REGISTER : "operates"
+    STORE ||--o{ INVENTORY_TRANSACTION : "logs"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  USER & ROLE / AUTH LAYER
+    %% ────────────────────────────────────────────────────────────────────────
+
+    USER ||--|| ROLE : "assigned"
+    USER ||--o| EMPLOYEE : "optionally linked"
+    USER ||--o{ NOTIFICATION : "receives"
+    USER ||--o{ AUDIT_LOG : "generates"
+    USER ||--o{ INVENTORY_TRANSACTION : "performs"
+    USER |o--o{ REFUND : "approves"
+
+    ROLE ||--o{ ROLE_PERMISSION : "has"
+    PERMISSION ||--o{ ROLE_PERMISSION : "assigned_to"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  PRODUCT & CATEGORY
+    %% ────────────────────────────────────────────────────────────────────────
+
+    CATEGORY ||--o{ PRODUCT : "contains"
+    PRODUCT ||--o{ INVENTORY : "stocked_as"
+    PRODUCT ||--o{ SALE_ITEM : "sold_in"
+    PRODUCT ||--o{ PURCHASE_ITEM : "purchased_in"
+    PRODUCT ||--o{ INVENTORY_TRANSACTION : "tracks"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  EMPLOYEE & OPERATIONS
+    %% ────────────────────────────────────────────────────────────────────────
+
+    EMPLOYEE ||--o{ SHIFT : "works"
+    EMPLOYEE ||--o{ SALE : "processes"
+    EMPLOYEE ||--o{ PURCHASE : "initiates"
+    EMPLOYEE ||--o{ OVERTIME_REQUEST : "requests"
+    EMPLOYEE ||--o{ REFUND : "issues"
+
+    CASH_REGISTER ||--o{ SHIFT : "tracks"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  PURCHASING
+    %% ────────────────────────────────────────────────────────────────────────
+
+    SUPPLIER ||--o{ PURCHASE : "supplies"
+    PURCHASE ||--o{ PURCHASE_ITEM : "includes"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  SALES
+    %% ────────────────────────────────────────────────────────────────────────
+
+    CUSTOMER |o--o{ SALE : "makes"
+    SALE ||--o{ SALE_ITEM : "includes"
+    SALE ||--o{ PAYMENT : "paid_by"
+    SALE |o--o{ REFUND : "returned_in"
+
+    %% ────────────────────────────────────────────────────────────────────────
+    %%  LEGEND — Symbol Reference
+    %% ────────────────────────────────────────────────────────────────────────
+
+    LEGEND {
+        string prim_key "Primary Key — uniquely identifies every row"
+        string for_key "Foreign Key — references PK of a related table"
+        string uni_key "Unique Key — value must not repeat"
+        string nullable "Field is optional — may be NULL"
+        string dec_10_2 "Fixed-decimal: stores up to 99,999,999.99"
+        string def_zero "Default value of 0 if not provided"
+        string auto_calc "Computed automatically by the system"
+        string enum_type "Restricted to a predefined list of values"
+        string uniq_per_brand "Unique within a single Brand only"
+        string uniq_global "Unique across all Brands"
+    }
+
+    CARDINALITY {
+        string one_to_many "|| -o{  : One (mandatory) to Many (optional)"
+        string one_to_one "|| -||  : One (mandatory) to One (mandatory)"
+        string zero_to_many "|o -o{  : Zero-or-One to Many (optional)"
+        string zero_to_one "|o -||  : Zero-or-One to One (mandatory)"
+        string many_to_many "}o -o{  : Many to Many (via junction table)"
+        string one_to_opt "|| -o|  : One (mandatory) to One (optional)"
+        string left_sym "LEFT  = minimum cardinality on source"
+        string right_sym "RIGHT = maximum cardinality on target"
+    }
+
+    %% ========================================================================
+    %%  ENTITY ATTRIBUTES
+    %% ========================================================================
+
+    BRAND {
+        uuid id PK
+        string name
+        string logo "nullable"
+        string email "nullable"
+        string phone "nullable"
+        string address "nullable"
+        string taxNumber "nullable"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    STORE {
+        uuid id PK
+        uuid brandId FK
+        string name
+        string code "UK with Brand"
+        string address "nullable"
+        string city "nullable"
+        string phone "nullable"
+        string openingTime "HH:MM, nullable"
+        string closingTime "HH:MM, nullable"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    USER {
+        uuid id PK
+        uuid brandId "FK, nullable for Developers"
+        string email "UK"
+        string passwordHash
+        string firstName
+        string lastName
+        string phone "nullable"
+        uuid roleId FK
+        boolean isActive
+        datetime lastLogin "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ROLE {
+        uuid id PK
+        string name "UK — Developer, Owner, Admin, Employee"
+        string description "nullable"
+    }
+
+    PERMISSION {
+        uuid id PK
+        string name "UK"
+        string description "nullable"
+    }
+
+    ROLE_PERMISSION {
+        uuid roleId PK, FK
+        uuid permissionId PK, FK
+    }
+
+    EMPLOYEE {
+        uuid id PK
+        uuid storeId FK
+        uuid userId "FK, UK"
+        string employeeCode "UK"
+        enum jobTitle "EmployeePosition"
+        decimal salary "Decimal(10,2), nullable"
+        date hireDate
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    CATEGORY {
+        uuid id PK
+        uuid brandId FK
+        string name "UK with Brand"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    PRODUCT {
+        uuid id PK
+        uuid brandId FK
+        uuid categoryId FK
+        string barcode "UK (global)"
+        string sku "UK with Brand"
+        string name
+        string description "nullable"
+        decimal costPrice "Decimal(10,2)"
+        decimal sellingPrice "Decimal(10,2)"
+        decimal taxRate "Decimal(5,2)"
+        string image "nullable"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    SUPPLIER {
+        uuid id PK
+        uuid brandId FK
+        string name
+        string email "nullable"
+        string phone "nullable"
+        string address "nullable"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    PURCHASE {
+        uuid id PK
+        uuid storeId FK
+        uuid supplierId FK
+        uuid employeeId FK
+        datetime purchaseDate
+        string invoiceNumber "UK, nullable"
+        decimal totalAmount "Decimal(10,2)"
+        string notes "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    PURCHASE_ITEM {
+        uuid purchaseId PK, FK
+        uuid productId PK, FK
+        int quantity
+        decimal costPrice "Decimal(10,2)"
+    }
+
+    INVENTORY {
+        uuid storeId PK, FK
+        uuid productId PK, FK
+        int quantity
+        int minQuantity "nullable"
+        int maxQuantity "nullable"
+    }
+
+    INVENTORY_TRANSACTION {
+        uuid id PK
+        uuid storeId FK
+        uuid productId FK
+        uuid userId FK
+        enum type "InventoryTxType"
+        int quantity
+        string referenceType "nullable"
+        uuid referenceId "nullable"
+        string notes "nullable"
+        datetime createdAt
+    }
+
+    CUSTOMER {
+        uuid id PK
+        uuid brandId FK
+        string name
+        string phone "nullable"
+        string email "nullable"
+        int loyaltyPoints "default 0"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    SALE {
+        uuid id PK
+        uuid storeId FK
+        uuid employeeId FK
+        uuid customerId "FK, nullable"
+        datetime saleDate
+        decimal totalAmount "Decimal(10,2)"
+        decimal discount "Decimal(10,2), default 0"
+        decimal tax "Decimal(10,2), auto-calculated"
+        datetime createdAt
+    }
+
+    SALE_ITEM {
+        uuid saleId PK, FK
+        uuid productId PK, FK
+        int quantity
+        decimal unitPrice "Decimal(10,2)"
+        decimal discount "Decimal(10,2), default 0"
+        decimal tax "Decimal(10,2), auto-calculated"
+    }
+
+    PAYMENT {
+        uuid id PK
+        uuid saleId FK
+        decimal amount "Decimal(10,2)"
+        enum method "PaymentMethod"
+    }
+
+    CASH_REGISTER {
+        uuid id PK
+        uuid storeId FK
+        string name
+        string number "nullable"
+        boolean isActive
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    SHIFT {
+        uuid id PK
+        uuid employeeId FK
+        uuid cashRegisterId FK
+        datetime startTime
+        datetime endTime "nullable (ongoing shift)"
+        decimal openingCash "Decimal(10,2)"
+        decimal closingCash "Decimal(10,2), nullable"
+    }
+
+    OVERTIME_REQUEST {
+        uuid id PK
+        uuid employeeId FK
+        decimal hours "Decimal(5,1)"
+        string reason
+        enum status "OvertimeStatus"
+    }
+
+    REFUND {
+        uuid id PK
+        uuid saleId FK
+        uuid employeeId FK
+        uuid approvedBy "FK — User"
+        datetime refundDate
+        string reason
+        decimal amount "Decimal(10,2)"
+        enum status "RefundStatus"
+    }
+
+    NOTIFICATION {
+        uuid id PK
+        uuid userId FK
+        string title
+        string message
+        enum type "NotificationType"
+        boolean isRead "default false"
+        datetime createdAt
+    }
+
+    AUDIT_LOG {
+        uuid id PK
+        uuid userId "FK, nullable"
+        enum action "AuditAction"
+        string entity
+        uuid entityId
+        string oldValue "nullable"
+        string newValue "nullable"
+        string ipAddress "nullable"
+        datetime createdAt
+    }
