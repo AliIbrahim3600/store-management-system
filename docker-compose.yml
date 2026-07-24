@@ -8,10 +8,34 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d store_management"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: store_management_api
+    ports:
+      - "3000:3000"
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:ali3600@postgres:5432/store_management
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./backend/src
+          target: /app/src
+        - action: sync
+          path: ./backend/prisma
+          target: /app/prisma
+        - action: rebuild
+          path: ./backend/package.json
 
 volumes:
   pgdata:
